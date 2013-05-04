@@ -35,7 +35,7 @@ void draw_display(int value);
 int get_digit(int num);
 void persist_digit(char digit);
 
-void tcnt1_delay(int target_freq);
+void tcnt1_delay(uint16_t target_freq);
 void hundreth_second_timer(void);
 void second_timer(void);
 
@@ -109,7 +109,7 @@ int main(void)
   return 0;                     /* never reached */
 }
 
-void tcnt1_delay(int target_freq){
+void tcnt1_delay(uint16_t target_freq){
   /*
    * NOTE 3 Hz delay @ 1024 prescaler
    * target_freq = 3;

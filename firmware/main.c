@@ -1,7 +1,6 @@
 /* Name: main.c
- * Author: <insert your name here>
- * Copyright: <insert your copyright message here>
- * License: <insert your license reference here>
+ * Author: Michael de Silva <michael@mwdesilva.com>
+ * Copyright: MIT License
  */
 
 #include <stdint.h>
@@ -26,9 +25,7 @@ void persist_digit(char digit);
 
 /*
  * Refresh frequency = 60 Hz = 16.67 ms
- * 5% duty-cycle (on-time) = 0.8335 ms
- * 833.5/4 = 208.5 us per digit.
- * 95% duty-cycle (off-time) = 15.837 ms
+ * 16.67/4 = 4.1675 ms per digit.
  */
 
 int main(void)
@@ -50,7 +47,12 @@ int main(void)
 }
 
 void draw_display(int value){
-  PORTD = 0x08;
+  PORTD = 0x08;                 // start with the LS-digit (4th digit).
+
+  /*
+   * Extract each digit from the value and set it from the least-significant
+   * digit to the most-significant digit onto the 7-segment display.
+   */
   while (value > 0) {
     int digit = value % 10;
     // do something with digit
@@ -58,11 +60,17 @@ void draw_display(int value){
     PORTD = PORTD >> 1;
     value /= 10;
   }
-
-  /*_delay_ms(13);*/
-  /*_delay_us(336);      // total = 15.832 us*/
 }
 
+/*
+ * 7-Segment Character Maps
+ *          _____
+ *       f / a  / b
+ *        /____/
+ *     e / g  / c
+ *      /____/ o dp
+ *       d
+ */
 int get_digit(int num){
   int output=0;
   switch(num){
@@ -102,23 +110,7 @@ int get_digit(int num){
 
 void persist_digit(char value){
   PORTB = value;
-  _delay_us(416);
-  _delay_us(416);      // total = 832 us
-
-  /*int i;*/
-  /*for(i=0;i<200;i++){*/
-    /*PORTB = value;*/
-    /*_delay_us(1);*/
-  /*}*/
+  _delay_ms(4);
+  _delay_us(167);
 }
 
-
-void test(void){
-    /*_delay_ms(1);             // [> max is 262.14 ms / F_CPU in MHz <]*/
-    /*[>PORTB ^= 1 << 4;        // [> toggle the LED <]<]*/
-    /*PORTD = PORTD << 1;*/
-    /*if (PORTD == 0x10) {*/
-      /*PORTD = 0x01;*/
-    /*}*/
-    /*PORTB = TWO;*/
-}

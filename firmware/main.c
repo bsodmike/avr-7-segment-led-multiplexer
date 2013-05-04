@@ -9,7 +9,8 @@
 #include <util/delay.h>
 
 #define F_CPU 8000000UL         // [> Clock Frequency = 8Mhz <]
-#define TIMER_PRESCALE 256
+/*#define TIMER0_PRESCALE 256*/
+#define TIMER1_PRESCALE 256
 
 /*
  * 7-Segment Character Maps
@@ -36,23 +37,38 @@ int get_digit(int num);
 void persist_digit(char digit);
 
 void tcnt1_delay(uint16_t target_freq);
-void hundreth_second_timer(void);
+void hundred_hertz_timer(void);
 void second_timer(void);
+void set_TIMER1_prescale(uint16_t prescale);
 
 /*
  * Refresh frequency = 60 Hz = 16.67 ms period.
  * 16.67/4 = 4.1675 ms per digit.
  */
 
-volatile int16_t val;
+volatile int16_t val = 0;
 
-ISR(TIMER1_OVF_vect)
-{
+// 8-bit timer ISR
+ISR(TIMER0_OVF_vect){
+  /*
+   * 1/8MHz * (2^8) =    32us
+   * 8/8MHz * (2^8) =    256us
+   * 64/8MHz * (2^8) =   2.048ms
+   * 256/8MHz * (2^8) =  8.192ms
+   * 1024/8MHz * (2^8) = 32.768ms
+   */
+  draw_display(val);
+  TCNT0 = 0;
+}
+
+// 16-bit timer ISR
+ISR(TIMER1_OVF_vect){
   /*
    * Enable to increment count on timer overflow @ 2^16 (16-bit timer)
    * Timer Resolution = prescale/input frequency
-   * 8/8MHz * (2^16) =    0.066s
-   * 64/8MHz * (2^16) =   0.524s
+   * 1/8MHz * (2^16) =    8.192ms
+   * 8/8MHz * (2^16) =    65.536ms
+   * 64/8MHz * (2^16) =   524.288ms
    * 256/8MHz * (2^16) =  2.097s
    * 1024/8MHz * (2^16) = 8.389s
    */
@@ -72,23 +88,14 @@ static void ioinit(void){
 
   /* Setup interrupts */
   TIMSK |= (1 << TOIE1);        // Enable overflow interrupt
-
-  switch(TIMER_PRESCALE){
-    case 1:
-      TCCR1B |= (1 << CS10);                  // no prescaling
-      break;
-    case 64:
-      TCCR1B |= (1 << CS10) | (1 << CS11);    // F_CPU/64
-      break;
-    case 256:
-      TCCR1B |= (1 << CS12);                  // F_CPU/256
-      break;
-    case 1024:
-      TCCR1B |= (1 << CS10) | (1 << CS12);    // F_CPU/1024
-      break;
-  }
-
+  set_TIMER1_prescale(TIMER1_PRESCALE);
   TCNT1 = 0x00;                 // Clear counter register
+
+  // TCCR0
+  TIMSK |= (1 << TOIE0);        // Enable overflow interrupt
+  TCCR0 |= (1 << CS02);         // F_CPU/256
+  TCNT0 = 0x00;                 // Clear counter register
+
   sei();                        // Enable global interrupts
 }
 
@@ -98,8 +105,7 @@ int main(void)
   ioinit();                     // setup bootup initialisations
   for(;;){
     /* insert your main loop code here */
-    draw_display(val);
-    hundreth_second_timer();
+    hundred_hertz_timer();
 
     // prevent overflow for completeness sake!
     if (val >= 32767){
@@ -115,22 +121,16 @@ void tcnt1_delay(uint16_t target_freq){
    * target_freq = 3;
    * target_count = (8000000/(1024*target_freq)) - 1;  // 2603
    */
-  uint16_t target_count = (F_CPU/(TIMER_PRESCALE*target_freq)) - 1;
+  uint16_t target_count = (F_CPU/(TIMER1_PRESCALE*target_freq)) - 1;
   if(TCNT1 >= target_count){
     val++;
     TCNT1 = 0;
   }
 }
 
-void hundreth_second_timer(void){
-  tcnt1_delay(100);        // 100 Hz delay (T = 0.1s) @ 256 prescaler
+void hundred_hertz_timer(void){
+  tcnt1_delay(100);             // 100 Hz delay (T = 0.1s)
 }
-
-void second_timer(void){
-  /* 1 Hz delay @ 256 prescaler */
-  tcnt1_delay(1);
-}
-
 
 void draw_display(int value){
   PORTD = 0x08;                 // start with the LS-digit (4th digit).
@@ -147,12 +147,12 @@ void draw_display(int value){
     value /= 10;
   }
 
-  // Display leading zero
+  // Clear leading digit of ghosting without the delay in persist_digit()
   if (PORTD == 0x02 || PORTD == 0x01){
-    persist_digit(get_digit(0));
+    PORTB = 0xff;
     if (val/1000 <= 0){
       PORTD = 0x01;
-      persist_digit(get_digit(0));
+      PORTB = 0xff;
     }
   }
 }
@@ -196,7 +196,22 @@ int get_digit(int num){
 
 void persist_digit(char value){
   PORTB = value;
-  _delay_ms(4);
-  _delay_us(167);
+  _delay_us(409);               // 5% of 8.192ms TIMER0 interrupt.
 }
 
+void set_TIMER1_prescale(uint16_t prescale){
+  switch(prescale){
+    case 1:
+      TCCR1B |= (1 << CS10);                  // no prescaling
+      break;
+    case 64:
+      TCCR1B |= (1 << CS10) | (1 << CS11);    // F_CPU/64
+      break;
+    case 256:
+      TCCR1B |= (1 << CS12);                  // F_CPU/256
+      break;
+    case 1024:
+      TCCR1B |= (1 << CS10) | (1 << CS12);    // F_CPU/1024
+      break;
+  }
+}

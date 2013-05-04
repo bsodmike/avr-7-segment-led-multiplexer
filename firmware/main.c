@@ -5,9 +5,21 @@
 
 #include <stdint.h>
 #include <avr/io.h>
+#include <avr/interrupt.h>
 #include <util/delay.h>
 
 #define F_CPU 8000000UL         // [> Clock Frequency = 8Mhz <]
+#define TIMER_PRESCALE 256
+
+/*
+ * 7-Segment Character Maps
+ *          _____
+ *       f / a  / b
+ *        /____/
+ *     e / g  / c
+ *      /____/ o dp
+ *       d
+ */
 #define ZERO 0xC0
 #define ONE 0xF9
 #define TWO 0xA4
@@ -23,28 +35,97 @@ void draw_display(int value);
 int get_digit(int num);
 void persist_digit(char digit);
 
+void tcnt1_delay(int target_freq);
+void hundreth_second_timer(void);
+void second_timer(void);
+
 /*
  * Refresh frequency = 60 Hz = 16.67 ms period.
  * 16.67/4 = 4.1675 ms per digit.
  */
 
-int main(void)
+volatile int16_t val;
+
+ISR(TIMER1_OVF_vect)
 {
-  /* insert your hardware initialization here */
+  /*
+   * Enable to increment count on timer overflow @ 2^16 (16-bit timer)
+   * Timer Resolution = prescale/input frequency
+   * 8/8MHz * (2^16) =    0.066s
+   * 64/8MHz * (2^16) =   0.524s
+   * 256/8MHz * (2^16) =  2.097s
+   * 1024/8MHz * (2^16) = 8.389s
+   */
+
+  /*val++;*/
+}
+
+/*
+ * Do all the startup-time peripheral initializations.
+ */
+static void ioinit(void){
+  /* Setup i/o */
   DDRD = 0xff;                  // set as output i/o
   PORTD = 0x00;
   DDRB = 0xff;                  // set as output i/o
-  PORTB = 0x00;                 // ... as low
+  PORTB = ZERO;
 
-  int i;
-  int val = 0;
+  /* Setup interrupts */
+  TIMSK |= (1 << TOIE1);        // Enable overflow interrupt
+
+  switch(TIMER_PRESCALE){
+    case 1:
+      TCCR1B |= (1 << CS10);                  // no prescaling
+      break;
+    case 64:
+      TCCR1B |= (1 << CS10) | (1 << CS11);    // F_CPU/64
+      break;
+    case 256:
+      TCCR1B |= (1 << CS12);                  // F_CPU/256
+      break;
+    case 1024:
+      TCCR1B |= (1 << CS10) | (1 << CS12);    // F_CPU/1024
+      break;
+  }
+
+  TCNT1 = 0x00;                 // Clear counter register
+  sei();                        // Enable global interrupts
+}
+
+int main(void)
+{
+  val = 0;
+  ioinit();                     // setup bootup initialisations
   for(;;){
     /* insert your main loop code here */
     draw_display(val);
-    val++;
+    hundreth_second_timer();
   }
   return 0;                     /* never reached */
 }
+
+void tcnt1_delay(int target_freq){
+  /*
+   * NOTE 3 Hz delay @ 1024 prescaler
+   * target_freq = 3;
+   * target_count = (8000000/(1024*target_freq)) - 1;  // 2603
+   */
+  uint16_t target_count = (F_CPU/(TIMER_PRESCALE*target_freq)) - 1;
+  if(TCNT1 >= target_count){
+    val++;
+    TCNT1 = 0;
+  }
+}
+
+void hundreth_second_timer(void){
+  tcnt1_delay(100);        // 100 Hz delay (T = 0.1s) @ 256 prescaler
+}
+
+void second_timer(void){
+  /* 1 Hz delay @ 256 prescaler */
+  tcnt1_delay(1);
+}
+
 
 void draw_display(int value){
   PORTD = 0x08;                 // start with the LS-digit (4th digit).
@@ -60,17 +141,17 @@ void draw_display(int value){
     PORTD = PORTD >> 1;
     value /= 10;
   }
+
+  // Display leading zero
+  if (PORTD == 0x02 || PORTD == 0x01){
+    persist_digit(get_digit(0));
+    if (val/1000 <= 0){
+      PORTD = 0x01;
+      persist_digit(get_digit(0));
+    }
+  }
 }
 
-/*
- * 7-Segment Character Maps
- *          _____
- *       f / a  / b
- *        /____/
- *     e / g  / c
- *      /____/ o dp
- *       d
- */
 int get_digit(int num){
   int output=0;
   switch(num){

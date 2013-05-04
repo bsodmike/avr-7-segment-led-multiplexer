@@ -100,6 +100,11 @@ int main(void)
     /* insert your main loop code here */
     draw_display(val);
     hundreth_second_timer();
+
+    // prevent overflow for completeness sake!
+    if (val >= 32767){
+      val = 0;
+    }
   }
   return 0;                     /* never reached */
 }

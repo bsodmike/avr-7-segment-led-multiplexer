@@ -24,7 +24,7 @@ int get_digit(int num);
 void persist_digit(char digit);
 
 /*
- * Refresh frequency = 60 Hz = 16.67 ms
+ * Refresh frequency = 60 Hz = 16.67 ms period.
  * 16.67/4 = 4.1675 ms per digit.
  */
 
